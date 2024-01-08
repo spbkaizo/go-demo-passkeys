@@ -178,6 +178,7 @@ func handleRegistration(w http.ResponseWriter, r *http.Request) {
 		&currentUser,
 	)
 	if err != nil {
+		log.Printf("ERROR: %v", err)
 		http.Error(w, "Error generating registration data", http.StatusInternalServerError)
 		return
 	}
@@ -185,16 +186,28 @@ func handleRegistration(w http.ResponseWriter, r *http.Request) {
 	// Store sessionData in a file
 	err = storeSessionData(currentUser.ID, sessionData)
 	if err != nil {
+		log.Printf("ERROR: %v", err)
 		http.Error(w, "Error storing session data", http.StatusInternalServerError)
 		return
 	}
 
 	// Respond with registration options
-	json.NewEncoder(w).Encode(options)
+	err = json.NewEncoder(w).Encode(options)
+	if err != nil {
+		log.Printf("ERROR: %v", err)
+	}
+	log.Printf("User %v registered with credentials: %+v", currentUser.ID, currentUser.Credentials)
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-	log.Println("Login request received")
+	log.Println("Login request received for user:", currentUser.ID)
+
+	if len(currentUser.Credentials) == 0 {
+		log.Printf("No credentials found for user %v", currentUser.ID)
+		http.Error(w, "No credentials found for user", http.StatusInternalServerError)
+		return
+	}
+
 	// Generate login options
 	options, sessionData, err := webAuthnConfig.BeginLogin(
 		&currentUser,
