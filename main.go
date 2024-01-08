@@ -150,7 +150,7 @@ func main() {
 	}
 
 	server := &http.Server{
-		Addr:      host + ":" + port,
+		Addr:      "0.0.0.0:" + port,
 		TLSConfig: tlsConfig,
 	}
 
