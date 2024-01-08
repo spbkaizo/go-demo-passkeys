@@ -1,10 +1,20 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"math/big"
+	"net"
 	"net/http"
+	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 )
@@ -20,6 +30,43 @@ type User struct {
 type SessionData struct {
 	UserID      uint
 	SessionData *webauthn.SessionData
+}
+
+func generateSelfSignedCert() (tls.Certificate, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"My Organization"},
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	ipAddresses := []net.IP{net.ParseIP("127.0.0.1")}
+	for _, ip := range ipAddresses {
+		template.IPAddresses = append(template.IPAddresses, ip)
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	cert := tls.Certificate{
+		Certificate: [][]byte{derBytes},
+		PrivateKey:  priv,
+	}
+
+	return cert, nil
 }
 
 // WebAuthnUser - Satisfies the webauthn.User interface
@@ -77,13 +124,28 @@ func handleMainPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/", fs)
+	cert, err := generateSelfSignedCert()
+	if err != nil {
+		log.Fatalf("Failed to generate self-signed certificate: %v", err)
+	}
 
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	server := &http.Server{
+		Addr:      ":8443",
+		TLSConfig: tlsConfig,
+	}
+
+	// Register your handlers
+	http.HandleFunc("/", handleMainPage)
 	http.HandleFunc("/register", handleRegistration)
 	http.HandleFunc("/login", handleLogin)
-	fmt.Println("Starting server at http://localhost:8080")
-	http.ListenAndServe(":8080", nil)
+
+	fmt.Println("Starting HTTPS server on https://localhost:8443")
+	log.Fatal(server.ListenAndServeTLS("", ""))
+
 }
 
 func handleRegistration(w http.ResponseWriter, r *http.Request) {
