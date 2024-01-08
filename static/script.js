@@ -78,19 +78,26 @@ async function register() {
     }
 }
 
-
-
 // Login using an existing WebAuthn credential
 async function login() {
     try {
         const response = await fetch('/login');
         const options = await response.json();
 
+        console.log("Received login options:", options);
+
+        const publicKeyOptions = options.publicKey;
+
+        if (!publicKeyOptions.challenge) {
+            console.error("Challenge is undefined", publicKeyOptions);
+            return; // Stop further execution if challenge is undefined
+        }
+
         // Convert challenge from Base64 to ArrayBuffer
-        options.challenge = bufferDecode(options.challenge);
+        publicKeyOptions.challenge = bufferDecode(publicKeyOptions.challenge);
 
         // Call WebAuthn API
-        const assertion = await navigator.credentials.get({ publicKey: options });
+        const assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
 
         // Convert assertion into a format that can be sent to the server
         const assertionForServer = {
@@ -120,3 +127,4 @@ async function login() {
         alert('Login failed');
     }
 }
+
