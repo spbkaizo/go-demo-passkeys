@@ -194,24 +194,37 @@ func handleRegistration(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
+	log.Println("Login request received")
 	// Generate login options
 	options, sessionData, err := webAuthnConfig.BeginLogin(
 		&currentUser,
 	)
 	if err != nil {
+		log.Printf("Error generating login data: %v", err)
 		http.Error(w, "Error generating login data", http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("Generated login options: %+v", options)
+	log.Printf("Generated session data: %+v", sessionData)
+
 	// Store sessionData in a file
 	err = storeSessionData(currentUser.ID, sessionData)
 	if err != nil {
+		log.Printf("Error storing session data: %v", err)
 		http.Error(w, "Error storing session data", http.StatusInternalServerError)
 		return
 	}
 
 	// Respond with login options
-	json.NewEncoder(w).Encode(options)
+	err = json.NewEncoder(w).Encode(options)
+	if err != nil {
+		log.Printf("Error encoding response: %v", err)
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+	}
+
+	log.Println("Login response sent")
+
 }
 
 func storeSessionData(userID uint, sessionData *webauthn.SessionData) error {
