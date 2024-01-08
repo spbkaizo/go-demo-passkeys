@@ -153,9 +153,11 @@ func main() {
 		Addr:      "0.0.0.0:" + port,
 		TLSConfig: tlsConfig,
 	}
+	fs := http.FileServer(http.Dir("./static"))
+	http.Handle("/", fs)
 
 	// Register your handlers
-	http.HandleFunc("/", handleMainPage)
+	// http.HandleFunc("/", handleMainPage)
 	http.HandleFunc("/register", handleRegistration)
 	http.HandleFunc("/login", handleLogin)
 
