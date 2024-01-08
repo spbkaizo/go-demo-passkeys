@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -18,6 +19,9 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 )
+
+var host string
+var port string
 
 // User - A simple user struct
 type User struct {
@@ -32,14 +36,20 @@ type SessionData struct {
 	SessionData *webauthn.SessionData
 }
 
-func generateSelfSignedCert() (tls.Certificate, error) {
+func generateSelfSignedCert(host string) (tls.Certificate, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
 
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
 	template := x509.Certificate{
-		SerialNumber: big.NewInt(1),
+		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			Organization: []string{"My Organization"},
 		},
@@ -51,9 +61,10 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 		BasicConstraintsValid: true,
 	}
 
-	ipAddresses := []net.IP{net.ParseIP("127.0.0.1")}
-	for _, ip := range ipAddresses {
+	if ip := net.ParseIP(host); ip != nil {
 		template.IPAddresses = append(template.IPAddresses, ip)
+	} else {
+		template.DNSNames = append(template.DNSNames, host)
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
@@ -101,11 +112,16 @@ var webAuthnConfig *webauthn.WebAuthn
 var currentUser User
 
 func init() {
+
+	flag.StringVar(&host, "host", "localhost", "Hostname or IP to listen on")
+	flag.StringVar(&port, "port", "8443", "Port to listen on")
+	flag.Parse()
+
 	var err error
 	webAuthnConfig, err = webauthn.New(&webauthn.Config{
-		RPDisplayName: "My Application",        // Display Name for your site
-		RPID:          "localhost",             // Domain name for your site
-		RPOrigin:      "http://localhost:8080", // Origin URL for WebAuthn requests
+		RPDisplayName: "Demo PoC for Passkeys",        // Display Name for your site
+		RPID:          host,                           // Domain name for your site
+		RPOrigin:      "https://" + host + ":" + port, // Origin URL for WebAuthn requests
 	})
 	if err != nil {
 		fmt.Printf("Failed to create WebAuthn: %s\n", err)
@@ -124,7 +140,7 @@ func handleMainPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	cert, err := generateSelfSignedCert()
+	cert, err := generateSelfSignedCert(host)
 	if err != nil {
 		log.Fatalf("Failed to generate self-signed certificate: %v", err)
 	}
@@ -134,7 +150,7 @@ func main() {
 	}
 
 	server := &http.Server{
-		Addr:      ":8443",
+		Addr:      host + ":" + port,
 		TLSConfig: tlsConfig,
 	}
 
@@ -143,8 +159,14 @@ func main() {
 	http.HandleFunc("/register", handleRegistration)
 	http.HandleFunc("/login", handleLogin)
 
-	fmt.Println("Starting HTTPS server on https://localhost:8443")
-	log.Fatal(server.ListenAndServeTLS("", ""))
+	// Create a TLS listener
+	listener, err := tls.Listen("tcp", server.Addr, tlsConfig)
+	if err != nil {
+		log.Fatalf("Failed to listen on %s:%s - %v", host, port, err)
+	}
+
+	fmt.Printf("Starting HTTPS server on https://%s:%s\n", host, port)
+	log.Fatal(server.Serve(listener)) // Use Serve, not ListenAndServeTL
 
 }
 
